@@ -11,7 +11,6 @@ import "hardhat/console.sol";
 contract StakingPlatform {
     
     address public owner;
-    address public rewardsTokenAddress;
     address payable public wethAddress;
     uint public totalSupply;
 
@@ -33,50 +32,49 @@ contract StakingPlatform {
         require(stakingStore[msg.sender].amount == 0, "You already have staked WETH");
         _;
     }
-    constructor(address payable _wethAddress, address _rewardsTokenAddress) {
+    constructor(address payable _wethAddress) {
         owner = msg.sender;
-        rewardsTokenAddress = _rewardsTokenAddress;
         wethAddress = _wethAddress;
     }
 
-    function stake() public firstTimeStakeOnly payable {
-        
+    // user needs to have WETH to stake it
+    function stake(uint amountOfWeth) public firstTimeStakeOnly  {
         require(totalSupply <= maxStakingAmountPerContract, "Max staking amount per contract is reached");
-        require(msg.value <= 50 ether, "Only 50 weth or less can be staked per user"); 
+        require(amountOfWeth <= 50 ether, "Only 50 eth or less can be staked per user"); 
         
-        (bool success, ) = wethAddress.call{value: msg.value}(abi.encodeWithSignature("deposit()"));
-        require(success, "Failed to deposit weth");
+        IERC20(wethAddress).transferFrom(msg.sender, address(this), amountOfWeth);
                 
-        stakingStore[msg.sender].dateCreated = block.timestamp;
-        stakingStore[msg.sender].amount += msg.value;
-        totalSupply += msg.value;
+        Stake memory newStake = Stake(block.timestamp, amountOfWeth);
+        stakingStore[msg.sender] = newStake;
+        totalSupply += amountOfWeth;
     }
 
-    function getAvailableRewardsBalance() external view returns (uint) {
-        uint stakingDays = (block.timestamp - stakingStore[msg.sender].dateCreated) / 86400;
-        uint totalRewars = stakingDays * stakingStore[msg.sender].amount;
-        uint withdrawnRewards = withdrawnRewardsStore[msg.sender];
-        return totalRewars - withdrawnRewards;
-    }
-
-    function withdrawRewards() external {
-        uint amountToWithdraw = this.getAvailableRewardsBalance();
-        require(amountToWithdraw > 0, "You have no available rewards");
-
-        IERC20 rewardsToken = IERC20(rewardsTokenAddress);
-        require(rewardsToken.balanceOf(address(this)) >= amountToWithdraw);
-        rewardsToken.transfer(msg.sender, amountToWithdraw);
-        withdrawnRewardsStore[msg.sender] += amountToWithdraw;
-    }
-
-    function unStake() external {
+    function unStake( address rewardsTokenAddress) external {
         require(stakingStore[msg.sender].amount > 0, "You have no staked weth");
         require(block.timestamp - stakingStore[msg.sender].dateCreated >= 90 days, "You can unstake your assets after 90 days");
 
-        WETH9 weth = WETH9(wethAddress);
-        weth.withdraw(stakingStore[msg.sender].amount);
+        
+        IERC20(wethAddress).transfer(msg.sender, stakingStore[msg.sender].amount);
+        this.withdrawRewards(msg.sender, rewardsTokenAddress);
         stakingStore[msg.sender].amount = 0;
         stakingStore[msg.sender].dateCreated = 0;
+        withdrawnRewardsStore[msg.sender] = 0;
+    }
+
+    function getAvailableRewardsBalance(address forAddress) external view returns (uint) {
+        uint stakingDays = (block.timestamp - stakingStore[forAddress].dateCreated) / 86400;
+        uint totalRewars = stakingDays * stakingStore[forAddress].amount;
+        uint withdrawnRewards = withdrawnRewardsStore[forAddress];
+        return totalRewars - withdrawnRewards;
+    }
+
+    function withdrawRewards(address forAddress, address rewardsTokenAddress) external {
+        uint amountToWithdraw = this.getAvailableRewardsBalance(forAddress);
+        if (amountToWithdraw > 0 ){
+            IERC20 rewardsToken = IERC20(rewardsTokenAddress);
+            rewardsToken.transfer(forAddress, amountToWithdraw);
+            withdrawnRewardsStore[forAddress] += amountToWithdraw;
+        }
     }
 
 }

@@ -11,8 +11,12 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  */
 contract DummyERC20 is ERC20, Ownable {
 
-    constructor(string memory _name, string memory _symbol, uint256 _initialSupply)
+    constructor(string memory _name, string memory _symbol, uint256 _initialSupply, address stakingPlatformAddress)
      ERC20(_name, _symbol) {
-        _mint(owner(), _initialSupply);
+        _mint(stakingPlatformAddress, _initialSupply);
+     }
+
+     function mint(uint amount) external {
+         _mint(msg.sender, amount);
      }
 }
