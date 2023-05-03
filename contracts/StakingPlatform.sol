@@ -26,7 +26,6 @@ contract StakingPlatform {
 
     // store
     mapping(address => Stake) public stakingStore;
-    mapping(address => uint) private withdrawnRewardsStore;
     
     modifier firstTimeStakeOnly () {
         require(stakingStore[msg.sender].amount == 0, "You already have staked WETH");
@@ -39,42 +38,34 @@ contract StakingPlatform {
 
     // user needs to have WETH to stake it
     function stake(uint amountOfWeth) public firstTimeStakeOnly  {
+        // checks
         require(totalSupply <= maxStakingAmountPerContract, "Max staking amount per contract is reached");
         require(amountOfWeth <= 50 ether, "Only 50 eth or less can be staked per user"); 
         
-        IERC20(wethAddress).transferFrom(msg.sender, address(this), amountOfWeth);
-                
+        // effects
         Stake memory newStake = Stake(block.timestamp, amountOfWeth);
         stakingStore[msg.sender] = newStake;
         totalSupply += amountOfWeth;
+
+        // intefactions
+        IERC20(wethAddress).transferFrom(msg.sender, address(this), amountOfWeth);        
     }
 
-    function unStake( address rewardsTokenAddress) external {
+    function unStake(address rewardsTokenAddress) external {
+        // checks
         require(stakingStore[msg.sender].amount > 0, "You have no staked weth");
         require(block.timestamp - stakingStore[msg.sender].dateCreated >= 90 days, "You can unstake your assets after 90 days");
-
         
-        IERC20(wethAddress).transfer(msg.sender, stakingStore[msg.sender].amount);
-        this.withdrawRewards(msg.sender, rewardsTokenAddress);
-        stakingStore[msg.sender].amount = 0;
-        stakingStore[msg.sender].dateCreated = 0;
-        withdrawnRewardsStore[msg.sender] = 0;
-    }
-
-    function getAvailableRewardsBalance(address forAddress) external view returns (uint) {
-        uint stakingDays = (block.timestamp - stakingStore[forAddress].dateCreated) / 86400;
-        uint totalRewars = stakingDays * stakingStore[forAddress].amount;
-        uint withdrawnRewards = withdrawnRewardsStore[forAddress];
-        return totalRewars - withdrawnRewards;
-    }
-
-    function withdrawRewards(address forAddress, address rewardsTokenAddress) external {
-        uint amountToWithdraw = this.getAvailableRewardsBalance(forAddress);
-        if (amountToWithdraw > 0 ){
-            IERC20 rewardsToken = IERC20(rewardsTokenAddress);
-            rewardsToken.transfer(forAddress, amountToWithdraw);
-            withdrawnRewardsStore[forAddress] += amountToWithdraw;
-        }
+        // effects
+        uint stakingAmount = stakingStore[msg.sender].amount;
+        uint stakingDays = (block.timestamp - stakingStore[msg.sender].dateCreated) / 86400;
+        
+        stakingStore[msg.sender] = Stake(0,0);
+        totalSupply -= stakingAmount;
+        
+        // interactions
+        IERC20(rewardsTokenAddress).transfer(msg.sender, stakingAmount * stakingDays);
+        IERC20(wethAddress).transfer(msg.sender, stakingAmount);
     }
 
 }
