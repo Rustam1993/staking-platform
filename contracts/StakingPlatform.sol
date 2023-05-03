@@ -26,6 +26,7 @@ contract StakingPlatform {
 
     // store
     mapping(address => Stake) public stakingStore;
+    mapping(address => uint) public withdrawnRewards;
     
     modifier firstTimeStakeOnly () {
         require(stakingStore[msg.sender].amount == 0, "You already have staked WETH");
@@ -59,13 +60,21 @@ contract StakingPlatform {
         // effects
         uint stakingAmount = stakingStore[msg.sender].amount;
         uint stakingDays = (block.timestamp - stakingStore[msg.sender].dateCreated) / 86400;
+        uint rewardsToWithdraw = (stakingAmount * stakingDays) - withdrawnRewards[msg.sender];
         
         stakingStore[msg.sender] = Stake(0,0);
         totalSupply -= stakingAmount;
         
         // interactions
-        IERC20(rewardsTokenAddress).transfer(msg.sender, stakingAmount * stakingDays);
+        IERC20(rewardsTokenAddress).transfer(msg.sender, rewardsToWithdraw);
         IERC20(wethAddress).transfer(msg.sender, stakingAmount);
+    }
+
+    function claimRewards(address rewardsTokenAddress) external {
+        uint stakingAmount = stakingStore[msg.sender].amount;
+        uint stakingDays = (block.timestamp - stakingStore[msg.sender].dateCreated) / 86400;
+        withdrawnRewards[msg.sender] += stakingAmount * stakingDays;
+        IERC20(rewardsTokenAddress).transfer(msg.sender, stakingAmount * stakingDays);
     }
 
 }
