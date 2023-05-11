@@ -3,20 +3,23 @@
 pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+
 
 /**
  * @title DummyERC20
  * @author JohnnyTime (https://smartcontractshacking.com)
  */
-contract DummyERC20 is ERC20, Ownable {
+contract DummyERC20 is ERC20 {
 
-    constructor(string memory _name, string memory _symbol, uint256 _initialSupply, address stakingPlatformAddress)
+    address public owner;
+    
+    constructor(string memory _name, string memory _symbol)
      ERC20(_name, _symbol) {
-        _mint(stakingPlatformAddress, _initialSupply);
+        owner = msg.sender;
      }
 
-     function mint(uint amount) external {
-         _mint(msg.sender, amount);
+     function adminMint(uint amount, address _to) external {
+        require(msg.sender == owner, "Only owner");
+         _mint(_to, amount);
      }
 }

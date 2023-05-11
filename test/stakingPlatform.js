@@ -6,6 +6,7 @@ const { expect } = require("chai");
 const { ethers, network } = require("hardhat");
 
 const _10_STAKE_ETH = ethers.utils.parseEther("10");
+const _30_STAKE_ETH = ethers.utils.parseEther("30");
 const _52_STAKE_ETH = ethers.utils.parseEther("52");
 const _42_STAKE_ETH = ethers.utils.parseEther("42");
 const _100000_STAKE_ETH = ethers.utils.parseEther("100000");
@@ -24,17 +25,22 @@ describe("Staking platform", function () {
     // weth local deploy
     const wethFactory = await ethers.getContractFactory("WETH", owner);
     const weth = await wethFactory.deploy();    
-    
-    // staking platform
-    const stakingPlatformFactory = await ethers.getContractFactory("StakingPlatform", owner);
-    const stakingPlatform = await stakingPlatformFactory.deploy(weth.address);
 
     // rewards token
     const rewardsTokenFactory = await ethers.getContractFactory("DummyERC20", owner);
-    const rewardsToken = await rewardsTokenFactory.deploy("rToken", "RT", _100000_STAKE_ETH, stakingPlatform.address);    
+    const rewardsToken = await rewardsTokenFactory.deploy("rToken", "RT");    
+    
+    // staking platform
+    const stakingPlatformFactory = await ethers.getContractFactory("StakingPlatform", owner);
+    const stakingPlatform = await stakingPlatformFactory.deploy(weth.address, rewardsToken.address);
+
+  
 
     // mint WETH tokens for user1
     await weth.connect(user1).mint({value : _52_STAKE_ETH})
+
+    // mint rewards token for admin
+    await rewardsToken.connect(owner).adminMint(_100000_STAKE_ETH, stakingPlatform.address)
 
     return { stakingPlatform, owner, user1, weth, rewardsToken };
   }
@@ -49,7 +55,7 @@ describe("Staking platform", function () {
     it("It should stake 10 ETH for user1", async function() {
       const { stakingPlatform, owner, user1, weth } = await loadFixture(deployOneYearLockFixture);
       await weth.connect(user1).approve(stakingPlatform.address, _10_STAKE_ETH)
-      await stakingPlatform.connect(user1).stake(_10_STAKE_ETH)
+      await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH)
 
       // check stakingStore
       let stakingStore = await stakingPlatform.stakingStore(user1.address)
@@ -66,51 +72,107 @@ describe("Staking platform", function () {
 
     it("User can't stake more than 50 eth", async function(){
       const { stakingPlatform, user1 } = await loadFixture(deployOneYearLockFixture);
-      await expect(stakingPlatform.connect(user1).stake(_52_STAKE_ETH)).to.be.revertedWith("Only 50 eth or less can be staked per user");
+      await expect(stakingPlatform.connect(user1).stakeWeth(_52_STAKE_ETH)).to.be.revertedWith("Only 50 eth or less can be staked per user");
     })
 
     it("User can't unstake assets", async function(){
       const { stakingPlatform, user1, weth, rewardsToken } = await loadFixture(deployOneYearLockFixture);
       // user does not have any staked assets
-      await expect(stakingPlatform.connect(user1).unStake(rewardsToken.address)).to.be.revertedWith("You have no staked weth");
+      await expect(stakingPlatform.connect(user1).unStakeWeth()).to.be.revertedWith("You have no staked weth");
       // stake 10 eth
       await weth.connect(user1).approve(stakingPlatform.address, _10_STAKE_ETH)
-      await stakingPlatform.connect(user1).stake(_10_STAKE_ETH)
+      await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH)
       
       // unstake right after staking before 90 days period
-      await expect(stakingPlatform.connect(user1).unStake(rewardsToken.address)).to.be.revertedWith("You can unstake your assets after 90 days");
+      await expect(stakingPlatform.connect(user1).unStakeWeth()).to.be.revertedWith("You can unstake your assets after 90 days");
     })
 
-    it("User can unstake assets", async function(){
-      const { stakingPlatform, user1, owner, weth, rewardsToken } = await loadFixture(deployOneYearLockFixture);
+    it("calculate rewards tests", async function(){
+      const { stakingPlatform, user1, weth, rewardsToken } = await loadFixture(deployOneYearLockFixture);
       await weth.connect(user1).approve(stakingPlatform.address, _10_STAKE_ETH)
-      await stakingPlatform.connect(user1).stake(_10_STAKE_ETH);
+      await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH);
 
-      let user1WethBalance = await weth.balanceOf(user1.address)
-      expect(user1WethBalance).to.be.equal(_42_STAKE_ETH)
+      const _24hrs = 1 * 24 * 60 * 60;
+      const _36hrs = 1 * 36 * 60 * 60;
+      const _15min = 1 * 1 * 15 * 60;
+      const _10sec = 10;
 
-      let stakingStore = await stakingPlatform.stakingStore(user1.address)
-      expect(stakingStore.amount).to.be.equal(_10_STAKE_ETH)
+      // rewards amount after 24hrs staking should be ( 10 weth)
+      await ethers.provider.send("evm_increaseTime", [_24hrs])
+      await ethers.provider.send('evm_mine');
+      let rewards = await stakingPlatform.connect(user1).calculateRewards(user1.address);
+      expect(rewards).to.be.equal(ethers.utils.parseEther("10"))
+      await ethers.provider.send("evm_increaseTime", [_24hrs*(-1)])
+      await ethers.provider.send('evm_mine');
+
+      // rewards amount after 36hrs staking should be ( 10.5 weth)
+      await ethers.provider.send("evm_increaseTime", [_36hrs])
+      await ethers.provider.send('evm_mine');
+      rewards = await stakingPlatform.connect(user1).calculateRewards(user1.address);
+      expect(rewards).to.be.equal(ethers.utils.parseEther("10.5"))
+      await ethers.provider.send("evm_increaseTime", [_36hrs*(-1)])
+      await ethers.provider.send('evm_mine');
+
+      // rewards amount after 15min staking should be (0.010416666666666666)
+      await ethers.provider.send("evm_increaseTime", [_15min])
+      await ethers.provider.send('evm_mine');
+      rewards = await stakingPlatform.connect(user1).calculateRewards(user1.address);
+      expect(rewards).to.be.equal(ethers.utils.parseEther("0.010416666666666666"))
+      await ethers.provider.send("evm_increaseTime", [_15min*(-1)])
+      await ethers.provider.send('evm_mine');      
+
+      // rewards amount after 10sec staking should be (0.010416666666666666)
+      await ethers.provider.send("evm_increaseTime", [_10sec])
+      await ethers.provider.send('evm_mine');
+      rewards = await stakingPlatform.connect(user1).calculateRewards(user1.address);
+      expect(rewards).to.be.equal(ethers.utils.parseEther("0.00011574074074074"))
+    })
+
+    it("User can stake weth multiple times unless it's below or equal 50weth", async function(){
+      const { stakingPlatform, user1, weth, rewardsToken } = await loadFixture(deployOneYearLockFixture);
+      await weth.connect(user1).approve(stakingPlatform.address, _42_STAKE_ETH)
+      await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH);
+      await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH);
+      await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH);
+
+      stakingStore = await stakingPlatform.stakingStore(user1.address)
+      expect(stakingStore.amount).to.be.equal(_30_STAKE_ETH)
+
+      await expect(stakingPlatform.connect(user1).stakeWeth(_30_STAKE_ETH)).to.be.revertedWith("Only 50 eth or less can be staked per user");
+    })
+
+    it("potential rewards should be calculated and stored when user stakes more than once", async function(){
+      const { stakingPlatform, user1, weth, rewardsToken } = await loadFixture(deployOneYearLockFixture);
+      await weth.connect(user1).approve(stakingPlatform.address, _42_STAKE_ETH)
+      await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH);
+      // wait 1 day - rewards 10 tokens
+      const _24hrs = 1 * 24 * 60 * 60;
+      await ethers.provider.send("evm_increaseTime", [_24hrs])
+      await ethers.provider.send('evm_mine');
+      await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH);
+
+      // 20 weth staked total, but available rewards after 24hrs only ~10weth
+      let rewards = await stakingPlatform.connect(user1).calculateRewards(user1.address);
+      expect(rewards).to.be.lessThan(ethers.utils.parseEther("10.1"))
+    })
+
+    it("user can unstake weth after 90 days", async function(){
+      const { stakingPlatform, user1, weth, rewardsToken } = await loadFixture(deployOneYearLockFixture);
+      await weth.connect(user1).approve(stakingPlatform.address, _42_STAKE_ETH)
+      await stakingPlatform.connect(user1).stakeWeth(ethers.utils.parseEther("1"));
       
       const _91day = 91 * 24 * 60 * 60;
       await ethers.provider.send("evm_increaseTime", [_91day])
       await ethers.provider.send('evm_mine');
 
-      // rewards amount after 91 day of staking should be ( 910 weth)
-      //let rewards = await stakingPlatform.connect(user1).getAvailableRewardsBalance(user1.address);
-      //expect(rewards).to.be.equal(ethers.utils.parseEther("910"))
+      await stakingPlatform.connect(user1).unStakeWeth();
+      // check user's weth balance
+      let balance = await weth.balanceOf(user1.address)
+      expect(balance).to.be.equal(_52_STAKE_ETH)
 
-      await stakingPlatform.connect(user1).unStake(rewardsToken.address);
-
-      stakingStore = await stakingPlatform.stakingStore(user1.address)
-      expect(stakingStore.amount).to.be.equal(0)
-
-      user1WethBalance = await weth.balanceOf(user1.address)
-      expect(user1WethBalance).to.be.equal(_52_STAKE_ETH)
-
-      // check rewards token balance for user1
-      let rewardsTokenUser1Balance = await rewardsToken.balanceOf(user1.address);
-      expect(rewardsTokenUser1Balance).to.be.equal(ethers.utils.parseEther("910"))
+      // check user's rewards token balance
+      let rewardsBalance = await rewardsToken.balanceOf(user1.address);
+      expect(rewardsBalance).to.be.lessThanOrEqual(ethers.utils.parseEther("91.1"))
     })
 
   });
