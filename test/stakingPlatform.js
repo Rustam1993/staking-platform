@@ -72,7 +72,7 @@ describe("Staking platform", function () {
 
     it("User can't stake more than 50 eth", async function(){
       const { stakingPlatform, user1 } = await loadFixture(deployOneYearLockFixture);
-      await expect(stakingPlatform.connect(user1).stakeWeth(_52_STAKE_ETH)).to.be.revertedWith("Only 50 eth or less can be staked per user");
+      await expect(stakingPlatform.connect(user1).stakeWeth(_52_STAKE_ETH)).to.be.revertedWith("50 weth is max per user");
     })
 
     it("User can't unstake assets", async function(){
@@ -84,7 +84,7 @@ describe("Staking platform", function () {
       await stakingPlatform.connect(user1).stakeWeth(_10_STAKE_ETH)
       
       // unstake right after staking before 90 days period
-      await expect(stakingPlatform.connect(user1).unStakeWeth()).to.be.revertedWith("You can unstake your assets after 90 days");
+      await expect(stakingPlatform.connect(user1).unStakeWeth()).to.be.revertedWith("90 days staking not reached");
     })
 
     it("calculate rewards tests", async function(){
@@ -138,7 +138,7 @@ describe("Staking platform", function () {
       stakingStore = await stakingPlatform.stakingStore(user1.address)
       expect(stakingStore.amount).to.be.equal(_30_STAKE_ETH)
 
-      await expect(stakingPlatform.connect(user1).stakeWeth(_30_STAKE_ETH)).to.be.revertedWith("Only 50 eth or less can be staked per user");
+      await expect(stakingPlatform.connect(user1).stakeWeth(_30_STAKE_ETH)).to.be.revertedWith("50 weth is max per user");
     })
 
     it("potential rewards should be calculated and stored when user stakes more than once", async function(){
