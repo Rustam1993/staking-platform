@@ -4,10 +4,6 @@ pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./Weth.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-
-// Uncomment this line to use console.log
-import "hardhat/console.sol";
 
 contract StakingPlatform {
     
