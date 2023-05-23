@@ -22,13 +22,22 @@ pragma solidity ^0.8.18;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract WETH is ERC20{
+
+    bool private reentrancyLock;    
     constructor() ERC20("Wrapped Ether", "WETH") {}
+
+    modifier nonReentrant() {
+        require(!reentrancyLock, "Reentrant call.");
+        reentrancyLock = true;
+        _;
+        reentrancyLock = false;
+    }    
 
     function mint() external payable {
         _mint(msg.sender, msg.value);
     }
 
-    function burn(uint amount) external {
+    function burn(uint amount) external nonReentrant{
         payable(msg.sender).transfer(amount);
         _burn(msg.sender, amount);
     }
